@@ -1,0 +1,8 @@
+/build/
+/libaom/
+/libaom.xcframework/
+/libaom.xcframework.zip
+/libaom.xcframework.zip.sha256
+/dist/
+.DS_Store
+__pycache__/

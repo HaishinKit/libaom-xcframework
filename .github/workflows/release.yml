@@ -1,0 +1,98 @@
+name: Release XCFramework
+run-name: Release libaom ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package release version (e.g. 3.15.3; upstream source is pinned)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: libaom-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'HaishinKit/libaom-xcframework' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      JOBS: '3'
+    steps:
+      - name: Check out the selected source commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Validate version and reject existing tags/releases
+        id: version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python3 scripts/ci-release.py
+
+      - name: Check toolchain
+        run: |
+          xcodebuild -version
+          test "$(uname -m)" = arm64
+
+      - name: Verify release tooling
+        run: python3 tests/verify-release.py
+
+      - name: Set up the tested CMake version
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake==3.31.10'
+          echo "CMAKE=$RUNNER_TEMP/cmake-venv/bin/cmake" >> "$GITHUB_ENV"
+
+      - name: Build all platforms
+        run: ./build.sh
+
+      - name: Verify Swift linking and codec round trips
+        run: ./build.sh verify
+
+      - name: Generate the release manifest
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          ./build.sh release "$RELEASE_TAG"
+          python3 scripts/release-manifest.py check "$RELEASE_TAG"
+          swift package dump-package
+
+      - name: Save release files for recovery
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ steps.version.outputs.tag }}
+          path: |
+            libaom.xcframework.zip
+            libaom.xcframework.zip.sha256
+            dist/Package.swift
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Commit the manifest and push the release tag
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          bash scripts/commit-release.sh "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
+
+      - name: Publish the GitHub Release
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: ./build.sh publish "$RELEASE_TAG"
+
+      - name: Show release URL
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: echo "Published https://github.com/HaishinKit/libaom-xcframework/releases/tag/$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

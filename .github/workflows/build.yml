@@ -1,0 +1,35 @@
+name: Build XCFramework
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      JOBS: '3'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          test "$(uname -m)" = arm64
+      - name: Set up the tested CMake version
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cmake-venv"
+          "$RUNNER_TEMP/cmake-venv/bin/python" -m pip install 'cmake==3.31.10'
+          echo "CMAKE=$RUNNER_TEMP/cmake-venv/bin/cmake" >> "$GITHUB_ENV"
+
+      - name: Build all platforms
+        run: ./build.sh
+      - name: Verify Swift linking and macOS codec round trips
+        run: python3 tests/verify.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libaom-xcframework
+          path: |
+            libaom.xcframework.zip
+            libaom.xcframework.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
