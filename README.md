@@ -64,7 +64,9 @@ let encoder = aom_codec_av1_cx()
 let decoder = aom_codec_av1_dx()
 ```
 
-Public C headers retain their `aom/` layout; the module map exports `libaom`.
+Public C headers retain their `aom/` layout; the module map at
+`Headers/libaom/module.modulemap` exports `libaom`. Its namespaced path avoids
+Xcode header-copy collisions when linking other static XCFrameworks, such as libvpx.
 The package does not add a transport or integrate AV1 into HaishinKit itself.
 
 ## Release from GitHub Actions
