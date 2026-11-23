@@ -32,6 +32,12 @@ def prepare():
  check_source()
  (ROOT/'build').mkdir(exist_ok=True)
  (ROOT/'build/source.json').write_text(json.dumps({'version':VERSION,'commit':COMMIT,'url':URL,'modified':False,'configuration':{'highBitDepth':True,'realtimeOnly':False,'libyuv':False,'webmIO':False,'apps':False}},indent=2)+'\n')
+def write_module_map(headers):
+ # Xcode copies static XCFramework headers into a shared include directory.
+ # Keep the module map unique without changing public <aom/...> include paths.
+ (headers/'module.modulemap').unlink(missing_ok=True)
+ (headers/'libaom').mkdir(exist_ok=True)
+ (headers/'libaom/module.modulemap').write_text('module libaom [system] {\n  umbrella "../aom"\n  export *\n}\n')
 def build(name):
  sdk, triple = PLATFORMS[name]
  source = ROOT/'libaom'
@@ -59,8 +65,7 @@ def build(name):
  subprocess.run([cmake,'--install',str(directory)],check=True)
  check_source()
  (directory/'source.json').write_bytes((ROOT/'build/source.json').read_bytes())
- headers = prefix/'include'
- (headers/'module.modulemap').write_text('module libaom [system] {\n  umbrella "aom"\n  export *\n}\n')
+ write_module_map(prefix/'include')
 def package():
  check_source()
  args = ['xcodebuild','-create-xcframework']
@@ -68,6 +73,8 @@ def package():
   directory = ROOT/'build'/name
   if (directory/'source.json').read_bytes() != (ROOT/'build/source.json').read_bytes():
    raise SystemExit(f'Stale build: {name}')
+  # Also normalize already-built slices when only the packaging step is rerun.
+  write_module_map(directory/'install/include')
   args += ['-library',str(directory/'install/lib/libaom.a'),'-headers',str(directory/'install/include')]
  output = ROOT/'libaom.xcframework'
  if output.exists(): shutil.rmtree(output)
